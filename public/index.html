@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat Sederhana</title>
+  <style>
+    :root { --bg: #f3f4f6; --card: #fff; --me: #dbeafe; --text: #111827; --muted: #6b7280; --border: #e5e7eb; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111827; --card: #1f2937; --me: #1e3a8a; --text: #f9fafb; --muted: #9ca3af; --border: #374151; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
+           display: flex; flex-direction: column; height: 100dvh; }
+    header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--card);
+             display: flex; gap: 8px; align-items: center; }
+    header h1 { font-size: 16px; margin: 0; flex: 1; }
+    header input { width: 140px; }
+    #list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .msg { max-width: 75%; padding: 8px 12px; border-radius: 12px; background: var(--card);
+           border: 1px solid var(--border); align-self: flex-start; word-wrap: break-word; }
+    .msg.me { align-self: flex-end; background: var(--me); }
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+    .text { white-space: pre-wrap; }
+    form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--card); }
+    input, button { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+                    background: var(--bg); color: var(--text); }
+    form input { flex: 1; }
+    button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
+    button:disabled { opacity: .5; }
+    #status { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Chat Sederhana</h1>
+    <span id="status"></span>
+    <input id="name" placeholder="Nama kamu" maxlength="40">
+  </header>
+
+  <div id="list"></div>
+
+  <form id="form">
+    <input id="text" placeholder="Ketik pesan..." maxlength="1000" autocomplete="off" required>
+    <button id="send" type="submit">Kirim</button>
+  </form>
+
+  <script>
+    const list = document.getElementById("list");
+    const form = document.getElementById("form");
+    const textEl = document.getElementById("text");
+    const nameEl = document.getElementById("name");
+    const sendBtn = document.getElementById("send");
+    const statusEl = document.getElementById("status");
+
+    // Nama disimpan di browser supaya tidak perlu diketik ulang.
+    try { nameEl.value = localStorage.getItem("chat-name") || ""; } catch {}
+    nameEl.addEventListener("change", () => {
+      try { localStorage.setItem("chat-name", nameEl.value.trim()); } catch {}
+    });
+
+    let lastId = 0;
+
+    function fmtTime(iso) {
+      // Ditampilkan dalam zona waktu masing-masing pembaca.
+      return new Date(iso).toLocaleString(undefined, {
+        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
+      });
+    }
+
+    function render(msgs) {
+      if (!msgs.length) return;
+      const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+      const myName = nameEl.value.trim() || "Anonim";
+      for (const m of msgs) {
+        const div = document.createElement("div");
+        div.className = "msg" + (m.name === myName ? " me" : "");
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `${m.name} · ${fmtTime(m.time)}`;
+        const text = document.createElement("div");
+        text.className = "text";
+        text.textContent = m.text;
+        div.append(meta, text);
+        list.appendChild(div);
+        lastId = Math.max(lastId, m.id);
+      }
+      if (atBottom) list.scrollTop = list.scrollHeight;
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch(`/messages?after=${lastId}`);
+        render(await res.json());
+        statusEl.textContent = "";
+      } catch {
+        statusEl.textContent = "Terputus, mencoba lagi...";
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = textEl.value.trim();
+      if (!text) return;
+      sendBtn.disabled = true;
+      try {
+        const res = await fetch("/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: nameEl.value.trim(), text })
+        });
+        if (res.ok) {
+          textEl.value = "";
+          await poll();
+          list.scrollTop = list.scrollHeight;
+        }
+      } finally {
+        sendBtn.disabled = false;
+        textEl.focus();
+      }
+    });
+
+    poll();
+    setInterval(poll, 2000); // cek pesan baru tiap 2 detik
+  </script>
+</body>
+</html>
